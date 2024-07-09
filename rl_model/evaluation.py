@@ -19,6 +19,63 @@ params = params._replace(state_size=env.observation_space.n)
 print(f"Action size: {params.action_size}")
 print(f"State size: {params.state_size}")
 
+# Define the Qlearning and EpsilonGreedy classes (provided previously)
+
+# Observing the environment
+learner = Qlearning(
+    learning_rate=params.learning_rate,
+    gamma=params.gamma,
+    state_size=params.state_size,
+    action_size=params.action_size,
+)
+explorer = EpsilonGreedy(
+    epsilon=params.epsilon,
+)
+
+def run_envs():
+    rewards = np.zeros((params.total_episodes, params.n_runs))
+    steps = np.zeros((params.total_episodes, params.n_runs))
+    episodes = np.arange(params.total_episodes)
+    qtables = np.zeros((params.n_runs, params.state_size, params.action_size))
+    all_states = []
+    all_actions = []
+    exploration_rates = np.zeros((params.total_episodes, params.n_runs))
+
+    for run in range(params.n_runs):
+        learner.reset_qtable()
+        exploration_rate = []
+
+        for episode in tqdm(episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False):
+            state = env.reset(seed=params.seed)[0]
+            step = 0
+            done = False
+            total_rewards = 0
+
+            while not done:
+                action = explorer.choose_action(
+                    action_space=env.action_space, state=state, qtable=learner.qtable
+                )
+
+                all_states.append(state)
+                all_actions.append(action)
+
+                new_state, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+
+                learner.qtable[state, action] = learner.update(
+                    state, action, reward, new_state
+                )
+
+                total_rewards += reward
+                step += 1
+                state = new_state
+
+            exploration_rates[episode, run] = explorer.epsilon
+            rewards[episode, run] = total_rewards
+            steps[episode, run] = step
+        qtables[run, :, :] = learner.qtable
+
+    return rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates
 
 def plot_convergence(qtables, params):
     """Plot the convergence of Q-values over time."""
@@ -41,7 +98,7 @@ def plot_cumulative_rewards(rewards, params=params):
     plt.title("Cumulative Rewards Over Time")
     plt.xlabel("Episodes")
     plt.ylabel("Cumulative Rewards")
-    plt.savefig(params.savefig_folder / "cummulative_rewards.png")
+    plt.savefig(params.savefig_folder / "cumulative_rewards.png")
     plt.show()
 
 
@@ -53,7 +110,7 @@ def plot_exploration_exploitation(exploration_rates, params=params):
     plt.title("Exploration-Exploitation Trade-off")
     plt.xlabel("Episodes")
     plt.ylabel("Exploration Rate")
-    plt.savefig(params.savefig_folder / "exploration-exploitation.png")
+    plt.savefig(params.savefig_folder / "exploration_exploitation.png")
     plt.show()
 
 
@@ -65,7 +122,7 @@ def plot_learning_curve(steps, params=params):
     plt.title("Learning Curve (Steps per Episode)")
     plt.xlabel("Episodes")
     plt.ylabel("Steps")
-    plt.savefig(params.savefig_folder / "learning-curve.png")
+    plt.savefig(params.savefig_folder / "learning_curve.png")
     plt.show()
 
 
@@ -86,10 +143,7 @@ def evaluate_policy(learner, env, params=params):
 
 
 # Running the environment
-rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates = (
-    run_env()
-)
-
+rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates = run_envs()
 
 # Plotting results
 plot_convergence(qtables, params)
