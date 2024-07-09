@@ -126,7 +126,6 @@ explorer = EpsilonGreedy(
 
 # Running the environment
 
-
 def run_env():
     rewards = np.zeros((params.total_episodes, params.n_runs))
     steps = np.zeros((params.total_episodes, params.n_runs))
@@ -134,50 +133,33 @@ def run_env():
     qtables = np.zeros((params.n_runs, params.state_size, params.action_size))
     all_states = []
     all_actions = []
+    exploration_rates = np.zeros((params.total_episodes, params.n_runs))
 
-    for run in range(params.n_runs):  # Run several times to account for stochasticity
-        learner.reset_qtable()  # Reset the Q-table between runs
-
-        for episode in tqdm(
-            episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False
-        ):
-            state = env.reset(seed=params.seed)[0]  # Reset the environment
+    for run in range(params.n_runs):
+        learner.reset_qtable()
+        for episode in tqdm(episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False):
+            state = env.reset(seed=params.seed)[0]
             step = 0
             done = False
             total_rewards = 0
 
             while not done:
-                action = explorer.choose_action(
-                    action_space=env.action_space, state=state, qtable=learner.qtable
-                )
-
-                # Log all states and actions
+                action = explorer.choose_action(action_space=env.action_space, state=state, qtable=learner.qtable)
                 all_states.append(state)
                 all_actions.append(action)
-
-                # Take the action (a) and observe the outcome state(s') and reward (r)
                 new_state, reward, terminated, truncated, info = env.step(action)
-
                 done = terminated or truncated
-
-                learner.qtable[state, action] = learner.update(
-                    state, action, reward, new_state
-                )
-
+                learner.qtable[state, action] = learner.update(state, action, reward, new_state)
                 total_rewards += reward
                 step += 1
-
-                # Our new state is state
                 state = new_state
 
-            # Log all rewards and steps
+            exploration_rates[episode, run] = explorer.epsilon
             rewards[episode, run] = total_rewards
             steps[episode, run] = step
         qtables[run, :, :] = learner.qtable
 
-    return rewards, steps, episodes, qtables, all_states, all_actions
-
-
+    return rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates
 # Executing actions
 # robot.move_forward()
 
