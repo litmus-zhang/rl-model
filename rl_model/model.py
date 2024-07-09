@@ -30,7 +30,7 @@ class Params(NamedTuple):
 
 
 params = Params(
-    total_episodes=100_000,
+    total_episodes=1_000,
     learning_rate=0.8,
     gamma=0.95,
     epsilon=0.1,
