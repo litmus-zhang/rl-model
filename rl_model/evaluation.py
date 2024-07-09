@@ -73,51 +73,6 @@ explorer = EpsilonGreedy(
     epsilon=params.epsilon,
 )
 
-def run_env():
-    rewards = np.zeros((params.total_episodes, params.n_runs))
-    steps = np.zeros((params.total_episodes, params.n_runs))
-    episodes = np.arange(params.total_episodes)
-    qtables = np.zeros((params.n_runs, params.state_size, params.action_size))
-    all_states = []
-    all_actions = []
-    exploration_rates = np.zeros((params.total_episodes, params.n_runs))
-
-    for run in range(params.n_runs):
-        learner.reset_qtable()
-        exploration_rate = []
-
-        for episode in tqdm(episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False):
-            state = env.reset(seed=params.seed)[0]
-            step = 0
-            done = False
-            total_rewards = 0
-
-            while not done:
-                action = explorer.choose_action(
-                    action_space=env.action_space, state=state, qtable=learner.qtable
-                )
-
-                all_states.append(state)
-                all_actions.append(action)
-
-                new_state, reward, terminated, truncated, info = env.step(action)
-                done = terminated or truncated
-
-                learner.qtable[state, action] = learner.update(
-                    state, action, reward, new_state
-                )
-
-                total_rewards += reward
-                step += 1
-                state = new_state
-
-            exploration_rates[episode, run] = explorer.epsilon
-            rewards[episode, run] = total_rewards
-            steps[episode, run] = step
-        qtables[run, :, :] = learner.qtable
-
-    return rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates
-
 def plot_convergence(qtables, params):
     """Plot the convergence of Q-values over time."""
     qtable_mean = qtables.mean(axis=0)
@@ -126,6 +81,7 @@ def plot_convergence(qtables, params):
     plt.title("Convergence of Q-values")
     plt.xlabel("Action")
     plt.ylabel("State")
+    plt.savefig(params.savefig_folder / "convergence_q_values.png")
     plt.show()
 
 def plot_cumulative_rewards(rewards, params):
@@ -137,6 +93,7 @@ def plot_cumulative_rewards(rewards, params):
     plt.title("Cumulative Rewards Over Time")
     plt.xlabel("Episodes")
     plt.ylabel("Cumulative Rewards")
+    plt.savefig(params.savefig_folder / "cummulative_rewards.png")
     plt.show()
 
 def plot_exploration_exploitation(exploration_rates, params):
@@ -147,6 +104,7 @@ def plot_exploration_exploitation(exploration_rates, params):
     plt.title("Exploration-Exploitation Trade-off")
     plt.xlabel("Episodes")
     plt.ylabel("Exploration Rate")
+    plt.savefig(params.savefig_folder / "exploration-exploitation.png")
     plt.show()
 
 def plot_learning_curve(steps, params):
@@ -157,6 +115,7 @@ def plot_learning_curve(steps, params):
     plt.title("Learning Curve (Steps per Episode)")
     plt.xlabel("Episodes")
     plt.ylabel("Steps")
+    plt.savefig(params.savefig_folder / "learning-curve.png")
     plt.show()
 
 def evaluate_policy(learner, env, params):
