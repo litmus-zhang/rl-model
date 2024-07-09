@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from model import run_env, params, env, learner
+from model import *
 
 # Ensure that the theme is set
 sns.set_theme()
@@ -32,6 +32,7 @@ explorer = EpsilonGreedy(
     epsilon=params.epsilon,
 )
 
+
 def run_envs():
     rewards = np.zeros((params.total_episodes, params.n_runs))
     steps = np.zeros((params.total_episodes, params.n_runs))
@@ -45,7 +46,9 @@ def run_envs():
         learner.reset_qtable()
         exploration_rate = []
 
-        for episode in tqdm(episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False):
+        for episode in tqdm(
+            episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False
+        ):
             state = env.reset(seed=params.seed)[0]
             step = 0
             done = False
@@ -76,6 +79,7 @@ def run_envs():
         qtables[run, :, :] = learner.qtable
 
     return rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates
+
 
 def plot_convergence(qtables, params):
     """Plot the convergence of Q-values over time."""
@@ -143,7 +147,9 @@ def evaluate_policy(learner, env, params=params):
 
 
 # Running the environment
-rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates = run_envs()
+rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates = (
+    run_envs()
+)
 
 # Plotting results
 plot_convergence(qtables, params)
