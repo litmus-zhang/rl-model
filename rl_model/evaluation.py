@@ -1,41 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from tqdm import tqdm
-from model import *
+from model import run_env, params, env, learner
 
 # Ensure that the theme is set
 sns.set_theme()
 
-class Params(NamedTuple):
-    total_episodes: int
-    learning_rate: float
-    gamma: float
-    epsilon: float
-    map_size: int
-    seed: int
-    is_slippery: bool
-    n_runs: int
-    action_size: int
-    state_size: int
-    proba_frozen: float
-    savefig_folder: Path
-
-# Define the parameters
-params = Params(
-    total_episodes=1000,
-    learning_rate=0.8,
-    gamma=0.95,
-    epsilon=0.1,
-    map_size=5,
-    seed=123,
-    is_slippery=False,
-    n_runs=20,
-    action_size=None,
-    state_size=None,
-    proba_frozen=0.9,
-    savefig_folder=Path("./assets/plots/"),
-)
 
 # RNG setup
 rng = np.random.default_rng(params.seed)
@@ -43,34 +13,12 @@ rng = np.random.default_rng(params.seed)
 # Create the figure folder if it doesn't exist
 params.savefig_folder.mkdir(parents=True, exist_ok=True)
 
-# Environment Setup
-env = gym.make(
-    "FrozenLake-v1",
-    is_slippery=params.is_slippery,
-    render_mode="rgb_array",
-    desc=generate_random_map(
-        size=params.map_size, p=params.proba_frozen, seed=params.seed
-    ),
-)
-
 # Creating the Q-table
 params = params._replace(action_size=env.action_space.n)
 params = params._replace(state_size=env.observation_space.n)
 print(f"Action size: {params.action_size}")
 print(f"State size: {params.state_size}")
 
-# Define the Qlearning and EpsilonGreedy classes (provided previously)
-
-# Observing the environment
-learner = Qlearning(
-    learning_rate=params.learning_rate,
-    gamma=params.gamma,
-    state_size=params.state_size,
-    action_size=params.action_size,
-)
-explorer = EpsilonGreedy(
-    epsilon=params.epsilon,
-)
 
 def plot_convergence(qtables, params):
     """Plot the convergence of Q-values over time."""

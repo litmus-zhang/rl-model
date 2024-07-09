@@ -1,6 +1,5 @@
 from pathlib import Path
-from typing import NamedTuple, DefaultDict, Tuple, List
-from robot import Robot, robot, sensor
+from typing import NamedTuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -126,6 +125,7 @@ explorer = EpsilonGreedy(
 
 # Running the environment
 
+
 def run_env():
     rewards = np.zeros((params.total_episodes, params.n_runs))
     steps = np.zeros((params.total_episodes, params.n_runs))
@@ -137,19 +137,25 @@ def run_env():
 
     for run in range(params.n_runs):
         learner.reset_qtable()
-        for episode in tqdm(episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False):
+        for episode in tqdm(
+            episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False
+        ):
             state = env.reset(seed=params.seed)[0]
             step = 0
             done = False
             total_rewards = 0
 
             while not done:
-                action = explorer.choose_action(action_space=env.action_space, state=state, qtable=learner.qtable)
+                action = explorer.choose_action(
+                    action_space=env.action_space, state=state, qtable=learner.qtable
+                )
                 all_states.append(state)
                 all_actions.append(action)
                 new_state, reward, terminated, truncated, info = env.step(action)
                 done = terminated or truncated
-                learner.qtable[state, action] = learner.update(state, action, reward, new_state)
+                learner.qtable[state, action] = learner.update(
+                    state, action, reward, new_state
+                )
                 total_rewards += reward
                 step += 1
                 state = new_state
@@ -160,6 +166,8 @@ def run_env():
         qtables[run, :, :] = learner.qtable
 
     return rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates
+
+
 # Executing actions
 # robot.move_forward()
 
@@ -284,7 +292,7 @@ for map_size in map_sizes:
     )
 
     print(f"Map size: {map_size}x{map_size}")
-    rewards, steps, episodes, qtables, all_states, all_actions = run_env()
+    rewards, steps, episodes, qtables, all_states, all_actions, _args = run_env()
 
     # Save the results in dataframes
     res, st = postprocess(episodes, params, rewards, steps, map_size)
