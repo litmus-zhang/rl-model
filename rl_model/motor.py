@@ -1,18 +1,20 @@
-from typing import Set
+from typing import List
 
 import Mock.GPIO as GPIO
 
+# import RPi.GPIO as GPIO
+
 
 class FourWheelMotor:
-    def __init__(self, speed: int, pins: Set[int] = set([11, 12, 13, 15])):
-        GPIO.setmode(GPIO.BOARD)
-        self.speed = speed
-        for pin in pins:
-            GPIO.setup(pin, GPIO.OUT)
-            self.pins = pins.add(pin)
+    """
+    A class to represent a four wheel motor.
+    then first two pins are for the left wheel (front and rear wheels respectively) and the last two pins are for the right wheel.
+    """
 
-    def set_speed(self, speed):
+    def __init__(self, speed: int, pins: List[int]):
+        GPIO.setmode(GPIO.BCM)
         self.speed = speed
+        self.pins = [GPIO.setup(i, GPIO.OUT) for i in pins if i in range(1, 27)]
 
     def get_speed(self):
         return self.speed
@@ -25,15 +27,25 @@ class FourWheelMotor:
 
     def move_forward(self):
         print("Moving forward")
+        GPIO.output([self.pins[0], self.pins[2]], GPIO.LOW)
+        GPIO.output([self.pins[1], self.pins[3]], GPIO.HIGH)
 
-    def move_backward(self):
+    def reverse(self):
         print("Moving backward")
+        GPIO.output([self.pins[0], self.pins[2]], GPIO.HIGH)
+        GPIO.output([self.pins[1], self.pins[3]], GPIO.LOW)
 
     def stop(self):
         print("Stopping")
+        GPIO.output([self.pins[0], self.pins[2]], GPIO.LOW)
+        GPIO.output([self.pins[1], self.pins[3]], GPIO.LOW)
 
     def turn_left(self):
         print("Turning left")
+        GPIO.output([self.pins[0], self.pins[2], self.pins[3]], GPIO.LOW)
+        GPIO.output([self.pins[1]], GPIO.LOW)
 
     def turn_right(self):
         print("Turning right")
+        GPIO.output([self.pins[0], self.pins[2], self.pins[1]], GPIO.LOW)
+        GPIO.output([self.pins[3]], GPIO.LOW)
