@@ -24,6 +24,7 @@ class Sensor:
         GPIO.output(self.trigger_pin, True)
         time.sleep(0.00001)  # 10µs
         GPIO.output(self.trigger_pin, False)
+        pulse_start, pulse_end = 0, 0
 
         # Measure the duration of the echo signal
         while GPIO.input(self.echo_pin) == 0:

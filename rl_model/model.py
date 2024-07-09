@@ -1,241 +1,318 @@
-from __future__ import annotations
-from collections import defaultdict
-
+from pathlib import Path
+from typing import NamedTuple, DefaultDict, Tuple, List
+from robot import Robot, robot, sensor
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
-from matplotlib.patches import Patch
 from tqdm import tqdm
 
-
 import gymnasium as gym
+from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
+sns.set_theme()
+
+
+class Params(NamedTuple):
+    total_episodes: int  # Total episodes
+    learning_rate: float  # Learning rate
+    gamma: float  # Discounting rate
+    epsilon: float  # Exploration probability
+    map_size: int  # Number of tiles of one side of the squared environment
+    seed: int  # Define a seed so that we get reproducible results
+    is_slippery: bool  # If true the player will move in intended direction with probability of 1/3 else will move in either perpendicular direction with equal probability of 1/3 in both directions
+    n_runs: int  # Number of runs
+    action_size: int  # Number of possible actions
+    state_size: int  # Number of possible states
+    proba_frozen: float  # Probability that a tile is frozen
+    savefig_folder: Path  # Root folder where plots are saved
+
+
+params = Params(
+    total_episodes=100_000,
+    learning_rate=0.8,
+    gamma=0.95,
+    epsilon=0.1,
+    map_size=5,
+    seed=123,
+    is_slippery=False,
+    n_runs=20,
+    action_size=None,
+    state_size=None,
+    proba_frozen=0.9,
+    savefig_folder=Path("./assets/plots/"),
+)
+
+rng = np.random.default_rng(params.seed)
+
+# Create the figure folder if it doesn't exists
+params.savefig_folder.mkdir(parents=True, exist_ok=True)
 # Environment Setup
-env = gym.make("Blackjack-v1", sab=True)
+env = gym.make(
+    "FrozenLake-v1",
+    is_slippery=params.is_slippery,
+    render_mode="rgb_array",
+    desc=generate_random_map(
+        size=params.map_size, p=params.proba_frozen, seed=params.seed
+    ),
+)
+
+# Creating the Q-table
+params = params._replace(action_size=env.action_space.n)
+params = params._replace(state_size=env.observation_space.n)
+print(f"Action size: {params.action_size}")
+print(f"State size: {params.state_size}")
+
+
+class Qlearning:
+    def __init__(self, learning_rate, gamma, state_size, action_size):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.learning_rate = learning_rate
+        self.gamma = gamma
+        self.reset_qtable()
+
+    def update(self, state, action, reward, new_state):
+        """Update Q(s,a):= Q(s,a) + lr [R(s,a) + gamma * max Q(s',a') - Q(s,a)]"""
+        delta = (
+            reward
+            + self.gamma * np.max(self.qtable[new_state, :])
+            - self.qtable[state, action]
+        )
+        q_update = self.qtable[state, action] + self.learning_rate * delta
+        return q_update
+
+    def reset_qtable(self):
+        """Reset the Q-table."""
+        self.qtable = np.zeros((self.state_size, self.action_size))
+
+
+class EpsilonGreedy:
+    def __init__(self, epsilon):
+        self.epsilon = epsilon
+
+    def choose_action(self, action_space, state, qtable):
+        """Choose an action `a` in the current world state (s)."""
+        # First we randomize a number
+        explor_exploit_tradeoff = rng.uniform(0, 1)
+
+        # Exploration
+        if explor_exploit_tradeoff < self.epsilon:
+            action = action_space.sample()
+
+        # Exploitation (taking the biggest Q-value for this state)
+        else:
+            # Break ties randomly
+            # If all actions are the same for this state we choose a random one
+            # (otherwise `np.argmax()` would always take the first one)
+            if np.all(qtable[state, :]) == qtable[state, 0]:
+                action = action_space.sample()
+            else:
+                action = np.argmax(qtable[state, :])
+        return action
 
 
 # Observing the environment
-done = False
-observation, info = env.reset()
+learner = Qlearning(
+    learning_rate=params.learning_rate,
+    gamma=params.gamma,
+    state_size=params.state_size,
+    action_size=params.action_size,
+)
+explorer = EpsilonGreedy(
+    epsilon=params.epsilon,
+)
+
+# Running the environment
+
+
+def run_env():
+    rewards = np.zeros((params.total_episodes, params.n_runs))
+    steps = np.zeros((params.total_episodes, params.n_runs))
+    episodes = np.arange(params.total_episodes)
+    qtables = np.zeros((params.n_runs, params.state_size, params.action_size))
+    all_states = []
+    all_actions = []
+
+    for run in range(params.n_runs):  # Run several times to account for stochasticity
+        learner.reset_qtable()  # Reset the Q-table between runs
+
+        for episode in tqdm(
+            episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False
+        ):
+            state = env.reset(seed=params.seed)[0]  # Reset the environment
+            step = 0
+            done = False
+            total_rewards = 0
+
+            while not done:
+                action = explorer.choose_action(
+                    action_space=env.action_space, state=state, qtable=learner.qtable
+                )
+
+                # Log all states and actions
+                all_states.append(state)
+                all_actions.append(action)
+
+                # Take the action (a) and observe the outcome state(s') and reward (r)
+                new_state, reward, terminated, truncated, info = env.step(action)
+
+                done = terminated or truncated
+
+                learner.qtable[state, action] = learner.update(
+                    state, action, reward, new_state
+                )
+
+                total_rewards += reward
+                step += 1
+
+                # Our new state is state
+                state = new_state
+
+            # Log all rewards and steps
+            rewards[episode, run] = total_rewards
+            steps[episode, run] = step
+        qtables[run, :, :] = learner.qtable
+
+    return rewards, steps, episodes, qtables, all_states, all_actions
+
 
 # Executing actions
-
-action = env.action_space.sample()
-
-observation, reward, terminated, truncated, info = env.step(action)
+# robot.move_forward()
 
 
 # Building an agent
-class BlackjackAgent:
-    def __init__(
-        self,
-        learning_rate: float,
-        initial_epsilon: float,
-        epsilon_decay: float,
-        final_epsilon: float,
-        discount_factor: float = 0.95,
-    ):
-        """Initialize a Reinforcement Learning agent with an empty dictionary
-        of state-action values (q_values), a learning rate and an epsilon.
-
-        Args:
-            learning_rate: The learning rate
-            initial_epsilon: The initial epsilon value
-            epsilon_decay: The decay for epsilon
-            final_epsilon: The final epsilon value
-            discount_factor: The discount factor for computing the Q-value
-        """
-        self.q_values = defaultdict(lambda: np.zeros(env.action_space.n))
-
-        self.lr = learning_rate
-        self.discount_factor = discount_factor
-
-        self.epsilon = initial_epsilon
-        self.epsilon_decay = epsilon_decay
-        self.final_epsilon = final_epsilon
-
-        self.training_error = []
-
-    def get_action(self, obs: tuple[int, int, bool]) -> int:
-        if np.random.random() < self.epsilon:
-            return env.action_space.sample()
-        else:
-            return int(np.argmax(self.q_values[obs]))
-
-    def update(
-        self,
-        obs: tuple[int, int, bool],
-        action: int,
-        reward: float,
-        terminated: bool,
-        next_obs: tuple[int, int, bool],
-    ):
-        future_q_value = (not terminated) * np.max(self.q_values[next_obs])
-        temporal_difference = (
-            reward + self.discount_factor * future_q_value
-        ) - self.q_values[obs][action]
-        self.q_values[obs][action] = (
-            self.q_values[obs][action] + self.lr * temporal_difference
-        )
-        self.training_error.append(temporal_difference)
-
-    def decay_epsilon(self):
-        self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_decay)
-
+# robot = Robot(motor=robot, sensor=sensor)
 
 # Training the agent
 
-learning_rate = 0.01
-n_episodes = 100_000
-start_epsilon = 1.0
-epsilon_decay = start_epsilon / (n_episodes // 2)
-final_epsilon = 0.1
-
-
-agent = BlackjackAgent(
-    learning_rate=learning_rate,
-    initial_epsilon=start_epsilon,
-    epsilon_decay=epsilon_decay,
-    final_epsilon=final_epsilon,
-)
-
-env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=n_episodes)
-for episode in tqdm(range(n_episodes)):
-    obs, info = env.reset()
-    done = False
-
-    while not done:
-        action = agent.get_action(obs)
-        next_obs, reward, terminated, truncated, info = env.step(action)
-
-        agent.update(obs, action, reward, terminated, next_obs)
-        done = terminated or truncated
-        obs = next_obs
-    agent.decay_epsilon()
-
 
 # Visualizing the agent's training performance
-rolling_length = 500
-
-fig, axs = plt.subplots(ncols=3, figsize=(12, 5))
-axs[0].set_title("Episode rewards")
-reward_moving_average = (
-    np.convolve(
-        np.array(env.return_queue).flatten(), np.ones(rolling_length), mode="valid"
+def postprocess(episodes, params, rewards, steps, map_size):
+    """Convert the results of the simulation in dataframes."""
+    res = pd.DataFrame(
+        data={
+            "Episodes": np.tile(episodes, reps=params.n_runs),
+            "Rewards": rewards.flatten(),
+            "Steps": steps.flatten(),
+        }
     )
-    / rolling_length
-)
+    res["cum_rewards"] = rewards.cumsum(axis=0).flatten(order="F")
+    res["map_size"] = np.repeat(f"{map_size}x{map_size}", res.shape[0])
 
-axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
-axs[1].set_title("Episode lengths")
-length_moving_average = (
-    np.convolve(
-        np.array(env.length_queue).flatten(), np.ones(rolling_length), mode="same"
+    st = pd.DataFrame(data={"Episodes": episodes, "Steps": steps.mean(axis=1)})
+    st["map_size"] = np.repeat(f"{map_size}x{map_size}", st.shape[0])
+    return res, st
+
+
+def qtable_directions_map(qtable, map_size):
+    """Get the best learned action & map it to arrows."""
+    qtable_val_max = qtable.max(axis=1).reshape(map_size, map_size)
+    qtable_best_action = np.argmax(qtable, axis=1).reshape(map_size, map_size)
+    directions = {0: "←", 1: "↓", 2: "→", 3: "↑"}
+    qtable_directions = np.empty(qtable_best_action.flatten().shape, dtype=str)
+    eps = np.finfo(float).eps  # Minimum float number on the machine
+    for idx, val in enumerate(qtable_best_action.flatten()):
+        if qtable_val_max.flatten()[idx] > eps:
+            # Assign an arrow only if a minimal Q-value has been learned as best action
+            # otherwise since 0 is a direction, it also gets mapped on the tiles where
+            # it didn't actually learn anything
+            qtable_directions[idx] = directions[val]
+    qtable_directions = qtable_directions.reshape(map_size, map_size)
+    return qtable_val_max, qtable_directions
+
+
+def plot_q_values_map(qtable, env, map_size):
+    """Plot the last frame of the simulation and the policy learned."""
+    qtable_val_max, qtable_directions = qtable_directions_map(qtable, map_size)
+
+    # Plot the last frame
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 5))
+    ax[0].imshow(env.render())
+    ax[0].axis("off")
+    ax[0].set_title("Last frame")
+
+    # Plot the policy
+    sns.heatmap(
+        qtable_val_max,
+        annot=qtable_directions,
+        fmt="",
+        ax=ax[1],
+        cmap=sns.color_palette("Blues", as_cmap=True),
+        linewidths=0.7,
+        linecolor="black",
+        xticklabels=[],
+        yticklabels=[],
+        annot_kws={"fontsize": "xx-large"},
+    ).set(title="Learned Q-values\nArrows represent best action")
+    for _, spine in ax[1].spines.items():
+        spine.set_visible(True)
+        spine.set_linewidth(0.7)
+        spine.set_color("black")
+    img_title = f"frozenlake_q_values_{map_size}x{map_size}.png"
+    fig.savefig(params.savefig_folder / img_title, bbox_inches="tight")
+    plt.show()
+
+
+def plot_states_actions_distribution(states, actions, map_size):
+    """Plot the distributions of states and actions."""
+    labels = {"LEFT": 0, "DOWN": 1, "RIGHT": 2, "UP": 3}
+
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 5))
+    sns.histplot(data=states, ax=ax[0], kde=True)
+    ax[0].set_title("States")
+    sns.histplot(data=actions, ax=ax[1])
+    ax[1].set_xticks(list(labels.values()), labels=labels.keys())
+    ax[1].set_title("Actions")
+    fig.tight_layout()
+    img_title = f"frozenlake_states_actions_distrib_{map_size}x{map_size}.png"
+    fig.savefig(params.savefig_folder / img_title, bbox_inches="tight")
+    plt.show()
+
+
+# Visualizing the policy on different maps sizes
+map_sizes = [4, 7, 9, 11]
+res_all = pd.DataFrame()
+st_all = pd.DataFrame()
+
+for map_size in map_sizes:
+    env = gym.make(
+        "FrozenLake-v1",
+        is_slippery=params.is_slippery,
+        render_mode="rgb_array",
+        desc=generate_random_map(
+            size=map_size, p=params.proba_frozen, seed=params.seed
+        ),
     )
-    / rolling_length
-)
 
-axs[1].plot(range(len(length_moving_average)), length_moving_average)
-axs[2].set_title("Training error")
-
-training_error_moving_average = (
-    np.convolve(np.array(agent.training_error), np.ones(rolling_length), mode="same")
-    / rolling_length
-)
-
-axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
-plt.tight_layout()
-plt.show()
-
-# Visualizing the policy
-
-
-def create_grids(agent, usable_ace=False):
-    state_value = defaultdict(float)
-    policy = defaultdict(int)
-    for obs, action_values in agent.q_values.items():
-        state_value[obs] = float(np.max(action_values))
-        policy[obs] = int(np.argmax(action_values))
-
-    player_count, dealer_count = np.meshgrid(
-        np.arange(12, 22),
-        np.arange(1, 11),
+    params = params._replace(action_size=env.action_space.n)
+    params = params._replace(state_size=env.observation_space.n)
+    env.action_space.seed(
+        params.seed
+    )  # Set the seed to get reproducible results when sampling the action space
+    learner = Qlearning(
+        learning_rate=params.learning_rate,
+        gamma=params.gamma,
+        state_size=params.state_size,
+        action_size=params.action_size,
     )
-    value = np.apply_along_axis(
-        lambda obs: state_value[(obs[0], obs[1], usable_ace)],
-        axis=2,
-        arr=np.dstack([player_count, dealer_count]),
+    explorer = EpsilonGreedy(
+        epsilon=params.epsilon,
     )
-    value_grid = player_count, dealer_count, value
 
-    policy_grid = np.apply_along_axis(
-        lambda obs: policy[(obs[0], obs[1], usable_ace)],
-        axis=2,
-        arr=np.dstack([player_count, dealer_count]),
-    )
-    return value_grid, policy_grid
+    print(f"Map size: {map_size}x{map_size}")
+    rewards, steps, episodes, qtables, all_states, all_actions = run_env()
 
+    # Save the results in dataframes
+    res, st = postprocess(episodes, params, rewards, steps, map_size)
+    res_all = pd.concat([res_all, res])
+    st_all = pd.concat([st_all, st])
+    qtable = qtables.mean(axis=0)  # Average the Q-table between runs
 
-def create_plots(value_grid, policy_grid, title: str):
-    player_count, dealer_count, value = value_grid
-    fig = plt.figure(figsize=plt.figaspect(0.4))
-    fig.suptitle(title, fontsize=16)
+    plot_states_actions_distribution(
+        states=all_states, actions=all_actions, map_size=map_size
+    )  # Sanity check
+    plot_q_values_map(qtable, env, map_size)
 
-    # plot the state values
-    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
-    ax1.plot_surface(
-        player_count,
-        dealer_count,
-        value,
-        rstride=1,
-        cstride=1,
-        cmap="viridis",
-        edgecolor="none",
-    )
-    plt.xticks(range(12, 22), range(12, 22))
-    plt.yticks(range(1, 11), ["A"] + list(range(2, 11)))
-    ax1.set_title(f"State Values: {title}")
-    ax1.set_xlabel("Player Sum")
-    ax1.set_ylabel("Dealer Showing")
-    ax1.zaxis.set_rotate_label(False)
-    ax1.set_zlabel("value", fontsize=12, rotation=90)
-    ax1.view_init(20, 220)
-
-    # plot the policy
-    fig.add_subplot(1, 2, 2)
-    ax2 = sns.heatmap(
-        policy_grid, linewidths=0, annot=True, cmap="Accent_r", cbar=False
-    )
-    ax2.set_title(f"Policy: {title}")
-    ax2.set_xlabel("Player Sum")
-    ax2.set_ylabel("Dealer Showing")
-    ax2.set_xticklabels(range(12, 22))
-    ax2.set_yticklabels(["A"] + list(range(2, 11)), fontsize=12)
-    legend_elements = [
-        Patch(facecolor="lightgreen", edgecolor="black", label="Hit"),
-        Patch(facecolor="grey", edgecolor="black", label="Stick"),
-    ]
-    ax2.legend(handles=legend_elements, bbox_to_anchor=(1.3, 1))
-    return fig
-
-
-value_grid, policy_grid = create_grids(agent, usable_ace=True)
-fig1 = create_plots(value_grid, policy_grid, "With Usable Ace")
-plt.show()
-
-# check if fig1 is saved in the current directory if yes, do not save it again
-fig1.savefig("./agent_usable_ace.png")
-
-# if "fig1" not in locals():
-#     fig1.savefig("./blackjack_usable_ace.png", fig1)
-# plt.savefig("./blackjack_usable_ace.png", fig1)
-
-value_grid, policy_grid = create_grids(agent, usable_ace=False)
-fig2 = create_plots(value_grid, policy_grid, "Without Usable Ace")
-plt.show()
-# plt.savefig("./blackjack_no_usable_ace.png", fig2)
-fig2.savefig("./agent_no_usable_ace.png")
-
-
-# Visualizing the environment
+    env.close()
