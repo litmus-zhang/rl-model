@@ -1,17 +1,58 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
+from tqdm import tqdm
 from model import *
 
 # Ensure that the theme is set
 sns.set_theme()
 
+class Params(NamedTuple):
+    total_episodes: int
+    learning_rate: float
+    gamma: float
+    epsilon: float
+    map_size: int
+    seed: int
+    is_slippery: bool
+    n_runs: int
+    action_size: int
+    state_size: int
+    proba_frozen: float
+    savefig_folder: Path
+
+# Define the parameters
+params = Params(
+    total_episodes=1000,
+    learning_rate=0.8,
+    gamma=0.95,
+    epsilon=0.1,
+    map_size=5,
+    seed=123,
+    is_slippery=False,
+    n_runs=20,
+    action_size=None,
+    state_size=None,
+    proba_frozen=0.9,
+    savefig_folder=Path("./assets/plots/"),
+)
 
 # RNG setup
 rng = np.random.default_rng(params.seed)
 
 # Create the figure folder if it doesn't exist
 params.savefig_folder.mkdir(parents=True, exist_ok=True)
+
+# Environment Setup
+env = gym.make(
+    "FrozenLake-v1",
+    is_slippery=params.is_slippery,
+    render_mode="rgb_array",
+    desc=generate_random_map(
+        size=params.map_size, p=params.proba_frozen, seed=params.seed
+    ),
+)
 
 # Creating the Q-table
 params = params._replace(action_size=env.action_space.n)
@@ -32,8 +73,7 @@ explorer = EpsilonGreedy(
     epsilon=params.epsilon,
 )
 
-
-def run_envs():
+def run_env():
     rewards = np.zeros((params.total_episodes, params.n_runs))
     steps = np.zeros((params.total_episodes, params.n_runs))
     episodes = np.arange(params.total_episodes)
@@ -46,9 +86,7 @@ def run_envs():
         learner.reset_qtable()
         exploration_rate = []
 
-        for episode in tqdm(
-            episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False
-        ):
+        for episode in tqdm(episodes, desc=f"Run {run}/{params.n_runs} - Episodes", leave=False):
             state = env.reset(seed=params.seed)[0]
             step = 0
             done = False
@@ -80,7 +118,6 @@ def run_envs():
 
     return rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates
 
-
 def plot_convergence(qtables, params):
     """Plot the convergence of Q-values over time."""
     qtable_mean = qtables.mean(axis=0)
@@ -92,8 +129,7 @@ def plot_convergence(qtables, params):
     plt.savefig(params.savefig_folder / "convergence_q_values.png")
     plt.show()
 
-
-def plot_cumulative_rewards(rewards, params=params):
+def plot_cumulative_rewards(rewards, params):
     """Plot the cumulative reward over time."""
     cum_rewards = rewards.cumsum(axis=0)
     mean_cum_rewards = cum_rewards.mean(axis=1)
@@ -105,8 +141,7 @@ def plot_cumulative_rewards(rewards, params=params):
     plt.savefig(params.savefig_folder / "cumulative_rewards.png")
     plt.show()
 
-
-def plot_exploration_exploitation(exploration_rates, params=params):
+def plot_exploration_exploitation(exploration_rates, params):
     """Plot the exploration-exploitation trade-off over time."""
     mean_exploration_rates = exploration_rates.mean(axis=1)
     plt.figure(figsize=(12, 8))
@@ -117,8 +152,7 @@ def plot_exploration_exploitation(exploration_rates, params=params):
     plt.savefig(params.savefig_folder / "exploration_exploitation.png")
     plt.show()
 
-
-def plot_learning_curve(steps, params=params):
+def plot_learning_curve(steps, params):
     """Plot the learning curve (performance of the agent over time)."""
     mean_steps = steps.mean(axis=1)
     plt.figure(figsize=(12, 8))
@@ -129,8 +163,7 @@ def plot_learning_curve(steps, params=params):
     plt.savefig(params.savefig_folder / "learning_curve.png")
     plt.show()
 
-
-def evaluate_policy(learner, env, params=params):
+def evaluate_policy(learner, env, params):
     """Evaluate the policy in an episodic MDP."""
     state = env.reset(seed=params.seed)[0]
     done = False
@@ -145,11 +178,8 @@ def evaluate_policy(learner, env, params=params):
 
     return total_rewards
 
-
 # Running the environment
-rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates = (
-    run_envs()
-)
+rewards, steps, episodes, qtables, all_states, all_actions, exploration_rates = run_env()
 
 # Plotting results
 plot_convergence(qtables, params)
